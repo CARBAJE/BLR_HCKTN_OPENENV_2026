@@ -1,5 +1,3 @@
-*.pt
-OSaaS/public/assets/wallpapers/
-OSaaS/public/assets/wallpapers/
-OSaaS/public/assets/icons/
-*.pt
+node_modules
+venv/
+OmniParser/

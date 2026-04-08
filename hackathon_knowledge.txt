@@ -1,0 +1,260 @@
+================================================================================
+OPENENV RL CHALLENGE — META PYTORCH HACKATHON (INDIA EDITION)
+KNOWLEDGE BASE FOR LLM AGENT
+================================================================================
+
+1. PROJECT IDENTITY
+-------------------
+Name: ReactOS (OSaaS — OS as a Service)
+Domain: Simulated operating system for AI agent training and evaluation
+Real-world task: Desktop OS navigation (opening apps, installing software,
+    managing files, configuring settings)
+Benchmark name: ReactOS
+Environment type: Interactive GUI navigation via DOM elements
+
+
+2. INFERENCE SCRIPT RULES (STRICTLY ENFORCED)
+----------------------------------------------
+File: inference.py (MUST be in root directory of the project)
+SDK: openai Python SDK ONLY (no alternative SDKs or direct HTTP calls)
+
+Environment variables (MUST read these):
+  API_BASE_URL  — LLM endpoint          (default: "https://api.openai.com/v1")
+  MODEL_NAME    — model identifier       (default: "gpt-4o-mini")
+  HF_TOKEN      — API key               (REQUIRED, no default, raise ValueError)
+
+Client initialization:
+  client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+
+
+3. STDOUT FORMAT (CRITICAL — ANY DEVIATION = INCORRECT SCORING)
+----------------------------------------------------------------
+Exactly three line types, in this order:
+
+  [START] task=<task_name> env=<benchmark> model=<model_name>
+  [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+  [END] success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+
+Formatting rules:
+  - One [START] line at episode begin
+  - One [STEP] line per step, immediately after env.step() returns
+  - One [END] line after episode completes, ALWAYS emitted (even on exception)
+  - reward, score, and all items in rewards: strictly 2-3 decimal places
+  - done and success: lowercase booleans (true or false)
+  - error: raw error string, or null if none
+  - All fields on a single line, no newlines within a line
+  - score must be in [0, 1]
+
+Example:
+  [START] task=open_terminal env=ReactOS model=gpt-4o-mini
+  [STEP] step=1 action=CLICK(Start Button) reward=0.03 done=false error=null
+  [STEP] step=2 action=CLICK(Terminal) reward=1.00 done=true error=null
+  [END] success=true steps=2 score=1.00 rewards=0.03,1.00
+
+
+4. ENVIRONMENT SPEC (OPENENV COMPLIANCE)
+-----------------------------------------
+Required endpoints (via FastAPI):
+  POST /reset        — reset episode, return initial observation
+  POST /step         — execute action, return observation + reward + done
+  GET  /state        — return current state
+  GET  /health       — return {"status": "healthy"}
+  GET  /schema       — return JSON schemas for action/observation
+
+openenv.yaml format:
+  spec_version: 1
+  name: react_os
+  type: space
+  runtime: fastapi
+  app: server.app:app
+  port: 8000
+
+Pydantic models required:
+  - Action subclass (with action type and target)
+  - Observation subclass (with done, reward, DOM state, instruction)
+  - State subclass (with episode_id, step_count, plus env-specific fields)
+
+
+5. TASKS (MINIMUM 3, EASY -> MEDIUM -> HARD)
+----------------------------------------------
+Each task defines:
+  - A concrete objective the agent must accomplish
+  - A programmatic grader that scores performance in [0.0, 1.0]
+  - Clear, deterministic success/failure criteria
+
+Our tasks:
+  EASY   — "Click the Start button"
+            Target: Start Button (single CLICK)
+            Score: 1.0 if clicked, 0.0 otherwise
+            Expected steps: 1
+
+  MEDIUM — "Open the Terminal"
+            Target: Terminal (open via Start menu)
+            Score: 1.0 if Terminal window opens, partial for start menu opened
+            Expected steps: 2-3
+
+  HARD   — "Install Python and verify in terminal"
+            Multi-step: open Downloads folder, find installer, run it,
+            click Install Now, open terminal, verify python command
+            Score: partial credit for each milestone reached
+            Expected steps: 6-15
+
+
+6. REWARD FUNCTION DESIGN
+---------------------------
+Multi-component reward in [0, 1]:
+
+  element_score x action_score  (0.0 or ~1.0) — correct element + action type
+  visibility_bonus              (0.05)         — target became visible after action
+  state_change_bonus            (0.03)         — OS state actually changed
+  proximity_reward              (0-0.1)        — clicked near target but missed
+  exploration_bonus             (0-0.12)       — new icons/elements appeared
+
+Rules:
+  - Desktop icons REQUIRE DOUBLE_CLICK to open
+  - All other elements use CLICK
+  - Final reward = min(1.0, sum of all components)
+  - Done condition: element_score * action_score >= 1.0 OR step >= max_steps
+
+
+7. ACTION SPACE
+----------------
+The agent sends:
+  {
+    "action": "CLICK" | "DOUBLE_CLICK",
+    "node_idx": <int>  (0-based index into the DOM element list)
+  }
+
+The environment resolves coordinates from the DOM element at node_idx.
+
+
+8. OBSERVATION SPACE
+---------------------
+The environment returns:
+  {
+    "dom": [
+      {"text": "Start Button", "type": "button", "x": 0.034, "y": 0.972},
+      {"text": "Desktop icon: This PC", "type": "icon", "x": 0.5, "y": 0.3},
+      ...
+    ],
+    "instruction": "Open the Terminal"
+  }
+
+Element types: button, icon, menuitem, window, taskbar, element, tab, input
+Coordinates: normalized to [0, 1] (x = pixel_x / 1280, y = pixel_y / 720)
+
+
+9. OS STATE MACHINE
+--------------------
+The simulated OS supports:
+  - Window management (open, close, focus, minimize, maximize)
+  - Start menu (toggle, close)
+  - Desktop icons (This PC, Downloads, System Settings, Recycle Bin, + random files)
+  - File Explorer (browsing directories, showing files)
+  - Terminal (command execution: echo, dir/ls, python, path, set, cd, cls)
+  - Python installer (Install Now, Customize Installation, Add to PATH)
+  - System Settings (System tab, Environment Variables tab)
+  - Clipboard operations
+  - Environment variables (PATH, USERPROFILE, TEMP, etc.)
+
+Visual randomization on each reset:
+  - Taskbar position: top, bottom, left, right
+  - Accent color: 10+ options
+  - Font family: 4 options
+  - Desktop background: 8 colors + 5 wallpaper images
+  - DPI scale: 0.85, 1.0, 1.15, 1.25
+  - Random file names on Desktop and Downloads
+
+
+10. INFRASTRUCTURE CONSTRAINTS
+-------------------------------
+  Runtime: < 20 minutes for inference script
+  Hardware: 2 vCPU, 8 GB RAM (Docker container)
+  Deployment: Hugging Face Spaces (Docker SDK)
+  Container: Must build with `docker build` and run with `docker run`
+  Health check: Container must respond to GET /health
+
+
+11. EVALUATION CRITERIA
+------------------------
+  Real-world utility      30%  — Does it model a genuine task?
+  Task & grader quality   25%  — Well-defined tasks, accurate graders, difficulty range
+  Environment design      20%  — Clean state, sensible spaces, good reward shaping
+  Code quality & spec     15%  — OpenEnv spec, typed models, documented, Dockerfile works
+  Creativity & novelty    10%  — Novel domain, interesting mechanics
+
+Scoring scale:
+  0-5:   Toy/artificial problem
+  6-15:  Valid domain but shallow
+  16-25: Good domain, useful for evaluation
+  26-30: Excellent, fills a real gap
+
+
+12. JUDGING PHASES
+-------------------
+  Phase 1: Automated Validation (pass/fail gate)
+    - HF Space deploys
+    - OpenEnv spec compliance
+    - Dockerfile builds
+    - Baseline reproduces
+    - 3+ tasks with graders
+
+  Phase 2: Agentic Evaluation (scored)
+    - Baseline agent re-run
+    - Standard LLM agent (e.g. Nemotron 3 Super) run against all environments
+    - Score variance check
+
+  Phase 3: Human Review
+    - Top submissions reviewed by Meta and Hugging Face engineers
+    - Check for real-world utility, creativity, exploit prevention
+
+
+13. DISQUALIFICATION CRITERIA
+------------------------------
+  - Environment does not deploy or respond
+  - Plagiarized or trivially modified existing environments
+  - Graders that always return the same score
+  - No baseline inference script
+  - Missing HF_TOKEN handling
+  - inference.py not in root directory
+
+
+14. PRE-SUBMISSION CHECKLIST
+-----------------------------
+  [ ] inference.py in root directory
+  [ ] Reads API_BASE_URL, MODEL_NAME, HF_TOKEN from env vars
+  [ ] Uses OpenAI Client for all LLM calls
+  [ ] Emits [START]/[STEP]/[END] format to stdout
+  [ ] Dockerfile builds successfully
+  [ ] HF Space is running (not building, not stopped)
+  [ ] /reset endpoint returns 200
+  [ ] /health endpoint returns 200
+  [ ] 3+ tasks with graders returning scores in [0, 1]
+  [ ] openenv.yaml exists and is valid
+  [ ] Runs within 2 vCPU / 8 GB RAM
+  [ ] Inference completes in < 20 minutes
+  [ ] Run validate-submission.sh before submitting
+
+
+15. KEY FILE STRUCTURE
+-----------------------
+  /                          (root)
+  |-- inference.py           LLM agent script (OpenAI SDK)
+  |-- openenv.yaml           OpenEnv manifest
+  |-- Dockerfile             Container definition
+  |-- pyproject.toml         Python project config
+  |-- README.md              Documentation
+  |-- server/
+  |   |-- __init__.py
+  |   |-- app.py             FastAPI app (create_app)
+  |   |-- environment.py     ReactOSEnvironment class
+  |   |-- models.py          Pydantic Action/Observation models
+  |   |-- headless_os.py     HeadlessOS simulation (Python)
+  |   |-- reducer.py         OS state machine (pure function)
+  |   |-- initial_state.py   Random state generator
+  |   |-- tasks.py           Task definitions + graders
+
+
+================================================================================
+END OF KNOWLEDGE BASE
+================================================================================

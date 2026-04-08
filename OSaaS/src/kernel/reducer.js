@@ -256,6 +256,103 @@ export default function reducer(state, action) {
         output = [state.environmentVariables.PATH];
       } else if (cmd === 'set') {
         output = Object.entries(state.environmentVariables).map(([k, v]) => `${k}=${v}`);
+      } else if (cmd === 'open' || cmd === 'start') {
+        const filename = args.slice(1).join(' ');
+        if (!filename) {
+          output = ['Usage: open <filename>', 'Opens a file in the appropriate viewer.'];
+        } else {
+          // Search current dir, then Documents, Desktop, Downloads
+          const searchDirs = [
+            state.currentDir.split('\\').filter(Boolean),
+            ['C:', 'Users', 'Admin', 'Documents'],
+            ['C:', 'Users', 'Admin', 'Desktop'],
+            ['C:', 'Users', 'Admin', 'Downloads'],
+          ];
+          let foundFile = null;
+          let foundPath = null;
+          for (const dirPath of searchDirs) {
+            let node = state.fileSystem[dirPath[0]];
+            for (let i = 1; i < dirPath.length; i++) {
+              node = node?.children?.[dirPath[i]];
+              if (!node) break;
+            }
+            if (node?.children?.[filename]) {
+              foundFile = node.children[filename];
+              foundPath = [...dirPath, filename];
+              break;
+            }
+          }
+
+          if (!foundFile) {
+            output = [`The system cannot find the file '${filename}'.`];
+          } else if (foundFile.type === 'folder') {
+            output = [`Opening folder ${filename}...`];
+            const id = state.nextWinId;
+            const geo = generateRandomGeometry();
+            return {
+              ...state,
+              terminalLines: [...lines, ...output, '', `${state.currentDir}> `],
+              terminalInput: '',
+              windowsStack: setFocused(state.windowsStack, id).concat({
+                id, title: 'File Explorer', component: 'Explorer',
+                ...geo, focused: true, props: {},
+              }),
+              nextWinId: id + 1,
+              focusedWindowId: id,
+              lastAction: 'TERMINAL_EXEC',
+            };
+          } else if (foundFile.ext === 'txt') {
+            output = [`Opening ${filename}...`];
+            const id = state.nextWinId;
+            const geo = generateRandomGeometry();
+            return {
+              ...state,
+              terminalLines: [...lines, ...output, '', `${state.currentDir}> `],
+              terminalInput: '',
+              windowsStack: setFocused(state.windowsStack, id).concat({
+                id, title: filename, component: 'TextViewer',
+                ...geo, focused: true,
+                props: { content: foundFile.content || '', filename, filePath: foundPath },
+              }),
+              nextWinId: id + 1,
+              focusedWindowId: id,
+              lastAction: 'TERMINAL_EXEC',
+            };
+          } else if (foundFile.ext === 'exe') {
+            output = [`Running ${filename}...`];
+            const id = state.nextWinId;
+            const geo = generateRandomGeometry();
+            const comp = foundFile.component || 'SystemRunner';
+            return {
+              ...state,
+              terminalLines: [...lines, ...output, '', `${state.currentDir}> `],
+              terminalInput: '',
+              windowsStack: setFocused(state.windowsStack, id).concat({
+                id, title: comp === 'PythonInstaller' ? 'Python 3.12.0 Setup' : filename,
+                component: comp,
+                ...geo, focused: true, props: { filename },
+              }),
+              nextWinId: id + 1,
+              focusedWindowId: id,
+              lastAction: 'TERMINAL_EXEC',
+            };
+          } else {
+            output = [`Cannot open '${filename}': unsupported file type.`];
+          }
+        }
+      } else if (cmd === 'help') {
+        output = [
+          'Available commands:',
+          '  cls / clear      Clear the terminal',
+          '  echo <text>      Print text',
+          '  dir / ls         List directory contents',
+          '  cd               Show current directory',
+          '  open <file>      Open a file (searches Documents, Desktop, Downloads)',
+          '  python           Launch Python (if installed)',
+          '  path             Show PATH variable',
+          '  set              Show environment variables',
+          '  help             Show this help message',
+        ];
       } else if (cmd === 'cd') {
         // simplified cd
         output = [state.currentDir];

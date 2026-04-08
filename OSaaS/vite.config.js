@@ -43,6 +43,24 @@ import { createInitialState } from './src/kernel/initialState.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Returns the expected action type for a given DOM element type.
+ * Desktop icons require DOUBLE_CLICK to open; everything else uses CLICK.
+ */
+function getExpectedAction(elementType) {
+  return elementType === 'icon' ? 'DOUBLE_CLICK' : 'CLICK';
+}
+
+/**
+ * Returns true if any element in the DOM contains the target text.
+ */
+function targetVisible(dom, target) {
+  return dom.some((el) => {
+    const t = (el.text ?? '').toLowerCase();
+    return t.includes(target) || target.includes(t);
+  });
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -85,8 +103,9 @@ class HeadlessOS {
   reset() { this._init(); }
 
   _init() {
-    this.state        = createInitialState();
+    this.state         = createInitialState();
     this.iconPositions = this._generateIconPositions();
+    this.version       = 0;   // increments on every state-changing action
   }
 
   // ── Layout helpers ──────────────────────────────────────────────────────────
@@ -215,6 +234,34 @@ class HeadlessOS {
       els.push({ text: 'Environment Variables', type: 'tab', x: (x + w * 0.40) / HL_SW, y: (y + 50) / HL_SH });
     }
 
+    if (component === 'Terminal') {
+      // Terminal prompt
+      els.push({ text: 'Terminal input', type: 'element', x: (x + w * 0.5) / HL_SW, y: (y + h - 30) / HL_SH });
+
+      // Built-in commands
+      els.push({ text: 'Terminal cmd: dir',  type: 'button', x: (x + 100) / HL_SW, y: (y + 60) / HL_SH });
+      els.push({ text: 'Terminal cmd: help', type: 'button', x: (x + 220) / HL_SW, y: (y + 60) / HL_SH });
+
+      // Openable .txt files from Documents (the agent can click to run "open <file>")
+      const docFiles = Object.keys(
+        this.state.fileSystem?.['C:']?.children?.Users?.children?.Admin?.children?.Documents?.children ?? {},
+      );
+      docFiles.filter(f => f.endsWith('.txt')).slice(0, 4).forEach((f, i) => {
+        els.push({
+          text: `Terminal cmd: open ${f}`,
+          type: 'button',
+          x: (x + 100) / HL_SW,
+          y: (y + 100 + i * 30) / HL_SH,
+        });
+      });
+    }
+
+    if (component === 'TextViewer') {
+      const fname = win.props?.filename || win.title || 'file';
+      els.push({ text: `TextViewer: ${fname}`, type: 'element', x: (x + w * 0.5) / HL_SW, y: (y + h * 0.5) / HL_SH });
+      els.push({ text: 'Save button',          type: 'button',  x: (x + w * 0.9) / HL_SW, y: (y + 36) / HL_SH });
+    }
+
     return els;
   }
 
@@ -225,35 +272,43 @@ class HeadlessOS {
     if (!el) return;
     const text = (el.text ?? '').toLowerCase();
     const isDouble = action === 'DOUBLE_CLICK';
+    const prevState = this.state;
 
     if (text === 'start button') {
-      this.state = osReducer(this.state, { type: 'TOGGLE_START' }); return;
-    }
-    if (text.startsWith('start menu item: ')) {
+      this.state = osReducer(this.state, { type: 'TOGGLE_START' });
+    } else if (text.startsWith('start menu item: ')) {
       this._openApp(text.replace('start menu item: ', ''));
-      this.state = osReducer(this.state, { type: 'CLOSE_START' }); return;
-    }
-    if (text.startsWith('desktop icon: ')) {
+      this.state = osReducer(this.state, { type: 'CLOSE_START' });
+    } else if (text.startsWith('desktop icon: ')) {
       if (isDouble) this._openApp(text.replace('desktop icon: ', ''));
-      this.state = osReducer(this.state, { type: 'CLOSE_START' }); return;
-    }
-    if (text.startsWith('close: ')) {
+      // Only close start menu if it was actually open — avoids spurious state diffs
+      if (this.state.startMenuOpen) {
+        this.state = osReducer(this.state, { type: 'CLOSE_START' });
+      }
+    } else if (text.startsWith('file: ')) {
+      // Files inside Explorer windows: double-click opens the file/app
+      if (isDouble) this._openApp(text.replace('file: ', ''));
+    } else if (text.startsWith('terminal cmd: ')) {
+      // Clickable terminal commands — set input and execute
+      const cmd = text.replace('terminal cmd: ', '');
+      this.state = osReducer(this.state, { type: 'TERMINAL_INPUT', value: cmd });
+      this.state = osReducer(this.state, { type: 'TERMINAL_EXEC' });
+    } else if (text.startsWith('close: ')) {
       const win = this.state.windowsStack.find(w => w.title.toLowerCase() === text.replace('close: ', ''));
-      if (win) this.state = osReducer(this.state, { type: 'CLOSE_WINDOW', id: win.id }); return;
-    }
-    if (text.startsWith('minimize: ')) {
+      if (win) this.state = osReducer(this.state, { type: 'CLOSE_WINDOW', id: win.id });
+    } else if (text.startsWith('minimize: ')) {
       const win = this.state.windowsStack.find(w => w.title.toLowerCase() === text.replace('minimize: ', ''));
-      if (win) this.state = osReducer(this.state, { type: 'MINIMIZE_WINDOW', id: win.id }); return;
-    }
-    if (text.startsWith('taskbar: ') || text.startsWith('window title bar: ')) {
+      if (win) this.state = osReducer(this.state, { type: 'MINIMIZE_WINDOW', id: win.id });
+    } else if (text.startsWith('taskbar: ') || text.startsWith('window title bar: ')) {
       const title = text.replace('taskbar: ', '').replace('window title bar: ', '');
       const win = this.state.windowsStack.find(w => w.title.toLowerCase() === title);
-      if (win) this.state = osReducer(this.state, { type: 'FOCUS_WINDOW', id: win.id }); return;
-    }
-    // Any other click: close start menu
-    if (this.state.startMenuOpen) {
+      if (win) this.state = osReducer(this.state, { type: 'FOCUS_WINDOW', id: win.id });
+    } else if (this.state.startMenuOpen) {
       this.state = osReducer(this.state, { type: 'CLOSE_START' });
     }
+
+    // Bump version whenever state actually changed (viewer detects this)
+    if (this.state !== prevState) this.version++;
   }
 
   _openApp(name) {
@@ -273,12 +328,17 @@ class HeadlessOS {
 // ─── RL environment tasks ─────────────────────────────────────────────────────
 
 const RL_TASKS = [
-  { instruction: 'Click the Start button',    targetText: 'Start'           },
-  { instruction: 'Open the Terminal',          targetText: 'Terminal'        },
-  { instruction: 'Open the Explorer',          targetText: 'This PC'         },
-  { instruction: 'Open System Settings',       targetText: 'System Settings' },
-  { instruction: 'Open the Downloads folder',  targetText: 'Downloads'       },
-  { instruction: 'Open the Recycle Bin',       targetText: 'Recycle Bin'     },
+  { instruction: 'Click the Start button',                                          targetText: 'Start'        },
+  { instruction: 'Open the Terminal',                                               targetText: 'Terminal'     },
+  { instruction: 'Open the Explorer',                                               targetText: 'This PC'      },
+  { instruction: 'Open System Settings',                                            targetText: 'System Settings' },
+  { instruction: 'Open the Downloads folder',                                       targetText: 'Downloads'    },
+  { instruction: 'Open the Recycle Bin',                                            targetText: 'Recycle Bin'  },
+  { instruction: "Click the 'Install Now' button in the Python Setup.",             targetText: 'Install Now'  },
+  { instruction: 'Open the Python installer from Downloads',                        targetText: 'Install Now'  },
+  { instruction: 'Open Notepad',                                                   targetText: 'Notepad'      },
+  { instruction: 'Open the Documents folder',                                      targetText: 'Documents'    },
+  { instruction: 'Open readme.txt using the Terminal',                             targetText: 'open readme.txt' },
 ];
 
 const RL_MAX_STEPS = 30;
@@ -452,16 +512,43 @@ function osaasApiPlugin() {
 
         // ── POST /reset  (RL env — headless, no browser needed) ─────────────
         if (url === '/reset' && req.method === 'POST') {
+          let body = {};
+          try { body = await readBody(req); } catch { /* empty body is fine */ }
+
           headlessOs.reset();
-          const task = RL_TASKS[Math.floor(Math.random() * RL_TASKS.length)];
+
+          // Allow caller to specify instruction; otherwise pick a random task
+          let task;
+          if (body.instruction) {
+            // Try to find a matching task by instruction text (case-insensitive)
+            const needle = body.instruction.toLowerCase();
+            task = RL_TASKS.find(t => t.instruction.toLowerCase() === needle);
+            // If no exact match, find by target keyword in the instruction
+            if (!task) {
+              task = RL_TASKS.find(t =>
+                needle.includes(t.targetText.toLowerCase()) ||
+                t.targetText.toLowerCase().split(' ').some(w => needle.includes(w))
+              );
+            }
+            // Fallback: use the instruction as-is with a generic target
+            if (!task) {
+              const words = body.instruction.split(/\s+/);
+              task = { instruction: body.instruction, targetText: words[words.length - 1] };
+            }
+          } else {
+            task = RL_TASKS[Math.floor(Math.random() * RL_TASKS.length)];
+          }
+
           episode = {
             instruction: task.instruction,
             targetText:  task.targetText,
             lastDom:     headlessOs.getDom(),
             step:        0,
             done:        false,
+            lastReward:  null,
+            lastInfo:    null,
           };
-          console.log(`[OSaaS/RL] Episode reset → "${task.instruction}"`);
+          console.log(`[OSaaS/RL] Episode reset → "${task.instruction}" (target: "${task.targetText}")`);
           json(res, 200, { status: 'ok', instruction: task.instruction });
           return;
         }
@@ -492,27 +579,88 @@ function osaasApiPlugin() {
           const { action = 'CLICK', node_idx = -1 } = body;
           episode.step++;
 
-          // Apply action to headless OS state
-          headlessOs.handleAction(node_idx, episode.lastDom, action);
+          const domBefore = episode.lastDom;
+          const tgt       = episode.targetText.toLowerCase();
 
-          // Evaluate reward: did the agent click the target element?
-          const clickedEl = episode.lastDom[node_idx];
-          let reward = 0.0;
+          // ── Was target already visible before this action? ────────────────
+          const wasVisible = targetVisible(domBefore, tgt);
+
+          // ── Apply action to OS, capture whether state changed ─────────────
+          const verBefore = headlessOs.version;
+          headlessOs.handleAction(node_idx, domBefore, action);
+          const domAfter     = headlessOs.getDom();
+          const stateChanged = headlessOs.version > verBefore;
+
+          // ── Is target visible AFTER the action? (appearance bonus) ────────
+          const nowVisible = targetVisible(domAfter, tgt);
+
+          // ── A: element_score — did the agent click the target text? ───────
+          const clickedEl   = domBefore[node_idx];
+          let elementScore  = 0.0;
+          let actionScore   = 1.0;
           if (clickedEl) {
-            const clicked = (clickedEl.text ?? '').toLowerCase();
-            const target  = episode.targetText.toLowerCase();
-            if (clicked.includes(target) || target.includes(clicked)) reward = 1.0;
+            const clickedText = (clickedEl.text ?? '').toLowerCase();
+            if (clickedText.includes(tgt) || tgt.includes(clickedText)) {
+              elementScore = 1.0;
+              // action_score: icons need DOUBLE_CLICK, everything else CLICK
+              const expected = getExpectedAction(clickedEl.type);
+              actionScore    = (action === expected) ? 1.0 : 0.4;
+            }
           }
-          // Step penalty when wrong
-          if (reward === 0.0) reward = -0.1;
 
-          const done = reward === 1.0 || episode.step >= RL_MAX_STEPS;
-          episode.done = done;
+          // ── B: visibility_bonus — target appeared in DOM after action ─────
+          // Rewards navigation steps that expose the target (e.g. open start menu)
+          const visibilityBonus = (!wasVisible && nowVisible) ? 0.05 : 0.0;
 
-          // Update DOM after state change so next /state reflects new OS state
-          episode.lastDom = headlessOs.getDom();
+          // ── C: state_change_bonus — any OS state change (interaction proof)
+          // Encourages the agent to interact vs. clicking empty areas
+          const stateChangeBonus = stateChanged ? 0.03 : 0.0;
 
-          json(res, 200, { reward, done });
+          // ── D: proximity_reward — clicked near target but missed ──────────
+          // Helps coordinate learning when the agent "almost" found the target
+          let proximityReward = 0.0;
+          if (elementScore === 0.0 && clickedEl) {
+            const targetEl = domBefore.find((el) => {
+              const t = (el.text ?? '').toLowerCase();
+              return t.includes(tgt) || tgt.includes(t);
+            });
+            if (targetEl) {
+              const dx   = (clickedEl.x ?? 0) - (targetEl.x ?? 0);
+              const dy   = (clickedEl.y ?? 0) - (targetEl.y ?? 0);
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < 0.3) proximityReward = 0.1 * (1 - dist / 0.3);
+            }
+          }
+
+          // ── E: exploration_bonus — new icons appeared after action ────────
+          // Rewards actions that expand the visible UI (open menus, windows, etc.)
+          const iconsBefore  = new Set(domBefore.filter(el => el.type === 'icon').map(el => el.text));
+          const newIconCount = domAfter.filter(el => el.type === 'icon' && !iconsBefore.has(el.text)).length;
+          const explorationBonus = Math.min(newIconCount * 0.04, 0.12); // +0.04 per new icon, cap 3
+
+          // ── Final reward — sum all components, clamp to [0, 1] ───────────
+          const reward = Math.min(
+            1.0,
+            elementScore * actionScore + visibilityBonus + stateChangeBonus + proximityReward + explorationBonus,
+          );
+
+          // Episode ends on full success (element + correct action) or timeout
+          const stepInfo = {
+            element_score:    elementScore,
+            action_score:     actionScore,
+            visibility_bonus: visibilityBonus,
+            state_change:     stateChangeBonus,
+            proximity:        proximityReward,
+            exploration:      explorationBonus,
+          };
+
+          const done = (elementScore * actionScore >= 1.0) || episode.step >= RL_MAX_STEPS;
+          episode.done       = done;
+          episode.lastReward = reward;
+          episode.lastInfo   = stepInfo;
+          episode.lastDom    = domAfter;
+
+          json(res, 200, { reward, done, info: stepInfo });
           return;
         }
 
@@ -532,7 +680,7 @@ function osaasApiPlugin() {
           return;
         }
 
-        // ── GET /rl/episode  (RL viewer polls this to detect new episodes) ───
+        // ── GET /rl/episode  (RL viewer polls this) ──────────────────────────
         if (url === '/rl/episode' && req.method === 'GET') {
           if (!episode) {
             json(res, 200, { active: false });
@@ -541,8 +689,21 @@ function osaasApiPlugin() {
           json(res, 200, {
             active:      true,
             instruction: episode.instruction,
+            targetText:  episode.targetText,
             step:        episode.step,
             done:        episode.done,
+            lastReward:  episode.lastReward,
+            lastInfo:    episode.lastInfo,
+          });
+          return;
+        }
+
+        // ── GET /rl/os-state  (viewer polls to render live OS snapshot) ───────
+        if (url === '/rl/os-state' && req.method === 'GET') {
+          json(res, 200, {
+            version: headlessOs.version,
+            state:   headlessOs.state,
+            dom:     episode ? episode.lastDom : [],
           });
           return;
         }

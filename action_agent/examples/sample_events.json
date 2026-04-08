@@ -1,0 +1,72 @@
+{
+  "data": [
+    {
+      "action": {
+        "type": "MOUSE_EVENT",
+        "payload": {
+          "action": "click",
+          "button": "left",
+          "position_x": 0.0193,
+          "position_y": 0.0277
+        }
+      },
+      "screenshot": ""
+    },
+    {
+      "action": {
+        "type": "MOUSE_EVENT",
+        "payload": {
+          "action": "click",
+          "button": "left",
+          "position_x": 0.1267,
+          "position_y": 0.091
+        }
+      },
+      "screenshot": ""
+    },
+    {
+      "action": {
+        "type": "MOUSE_EVENT",
+        "payload": {
+          "action": "dblclick",
+          "button": "left",
+          "position_x": 0.0805,
+          "position_y": 0.485
+        }
+      },
+      "screenshot": ""
+    },
+    {
+      "action": {
+        "type": "KEYBOARD_EVENT",
+        "payload": {
+          "action": "text",
+          "text": "python"
+        }
+      },
+      "image": ""
+    },
+    {
+      "action": {
+        "type": "KEYBOARD_EVENT",
+        "payload": {
+          "action": "key",
+          "key": "Enter"
+        }
+      },
+      "image": ""
+    },
+    {
+      "action": {
+        "type": "MOUSE_EVENT",
+        "payload": {
+          "action": "click",
+          "button": "left",
+          "position_x": 0.5524,
+          "position_y": 0.2331
+        }
+      },
+      "screenshot": ""
+    }
+  ]
+}

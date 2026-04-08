@@ -46,7 +46,7 @@ function shuffle(arr) {
 }
 
 const ALL_TXT = [
-  'notes.txt','readme.txt','log.txt','report.txt','config.txt',
+  'notes.txt','log.txt','report.txt','config.txt',
   'memo.txt','draft.txt','summary.txt','todo.txt','ideas.txt',
   'changelog.txt','instructions.txt','license.txt','data.txt',
 ];
@@ -130,10 +130,19 @@ function buildFileSystem() {
                     ...syntheticFiles({ folders: 0, txt: 1, exe: 0 }),
                   },
                 },
-                // Documents with text files
+                // Documents with text files (readme.txt is always present for RL tasks)
                 Documents: {
                   type: 'folder',
-                  children: syntheticFiles({ folders: 1, txt: 2, exe: 0 }),
+                  children: {
+                    'readme.txt': {
+                      type:    'file',
+                      ext:     'txt',
+                      size:    '2 KB',
+                      icon:    '/assets/icons/file_1.png',
+                      content: 'Welcome to OSaaS.\n\nThis system simulates a desktop operating system environment.\nYou can open files, run programs, and explore the file system.\n\nFor help, open the Terminal and type "help".',
+                    },
+                    ...syntheticFiles({ folders: 1, txt: 2, exe: 0 }),
+                  },
                 },
                 AppData: {
                   type: 'folder',

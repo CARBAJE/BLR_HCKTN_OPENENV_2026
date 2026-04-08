@@ -27,7 +27,7 @@ import torch.nn as nn
 import torch.optim as optim
 import requests
 
-from model import DOMAgent, dom_to_graph, ACTION_MAP
+from model import DOMAgent, dom_to_graph, ACTION_MAP, DEVICE
 
 
 # ── Reproducibility ───────────────────────────────────────────────────────────
@@ -123,11 +123,11 @@ def bc_loss_fn(
     # CrossEntropy expects (1, N) logits and (1,) target
     node_loss = node_loss_fn(
         node_log_probs.unsqueeze(0),          # (1, N)
-        torch.tensor([target_node]),
+        torch.tensor([target_node], device=DEVICE),
     )
     action_loss = action_loss_fn(
         action_logits.unsqueeze(0),           # (1, num_actions)
-        torch.tensor([target_action_idx]),
+        torch.tensor([target_action_idx], device=DEVICE),
     )
 
     return node_w * node_loss + action_w * action_loss
@@ -141,10 +141,12 @@ def train_imitation(
     checkpoint_path: str = "agent_bc.pt",
     augment: bool = True,
 ) -> None:
+    model = model.to(DEVICE)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     node_loss_fn   = nn.CrossEntropyLoss()
     action_loss_fn = nn.CrossEntropyLoss()
 
+    print(f"[BC] Training on device: {DEVICE}")
     samples = load_recordings(recordings_dir)
     if not samples:
         print("[WARN] No recording samples found. Skipping imitation training.")
@@ -217,6 +219,8 @@ class RLEnvClient:
         return self._post("/step", action)
 
 
+REPEAT_PENALTY = -0.2   # applied when the agent picks the same node twice in a row
+
 def collect_episode(
     model: DOMAgent,
     env: RLEnvClient,
@@ -238,6 +242,8 @@ def collect_episode(
     state = env.state()
     dom   = state.get("dom", [])
 
+    prev_node_idx: int | None = None   # track last chosen node for repeat penalty
+
     for _ in range(max_steps):
         if not dom:
             break
@@ -254,8 +260,10 @@ def collect_episode(
         # Per-step entropy: encourages exploration and provides gradient signal
         entropy = -(probs * node_log_probs).sum()
 
-        action_idx = action_logits.argmax().item()
-        action_str = ACTION_MAP[action_idx]
+        # Sample action type to allow exploring DOUBLE_CLICK and KEYBOARD_EVENT
+        action_probs = torch.softmax(action_logits, dim=-1)
+        action_idx   = torch.multinomial(action_probs, 1).item()
+        action_str   = ACTION_MAP[action_idx]
 
         x, y = graph.coords[node_idx].tolist()
 
@@ -275,6 +283,12 @@ def collect_episode(
         if reward is None:
             reward = step_penalty
         reward = float(reward)
+
+        # Penalize repeated selection of the same node — forces exploration
+        if int(node_idx) == prev_node_idx:
+            reward += REPEAT_PENALTY
+        prev_node_idx = int(node_idx)
+
         done   = bool(result.get("done", False))
 
         log_probs_list.append(log_p)
@@ -315,8 +329,10 @@ def train_rl(
     entropy_coef: float = 0.05,
     baseline_alpha: float = 0.05,
 ) -> None:
+    model = model.to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     env = RLEnvClient(server_url)
+    print(f"[RL] Training on device: {DEVICE}")
     # Moving-average baseline to reduce REINFORCE variance
     reward_baseline = 0.0
 
@@ -354,7 +370,7 @@ def train_rl(
         reward_baseline += baseline_alpha * (total_reward - reward_baseline)
 
         returns  = compute_returns(rewards, gamma)
-        returns_t = torch.tensor(returns, dtype=torch.float)
+        returns_t = torch.tensor(returns, dtype=torch.float, device=DEVICE)
 
         # Subtract baseline to reduce variance
         returns_t = returns_t - reward_baseline

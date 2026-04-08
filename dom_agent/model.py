@@ -32,6 +32,9 @@ PROX_THRESH  = 0.25         # spatial proximity edge threshold (normalised)
 
 ACTION_MAP   = {0: "CLICK", 1: "DOUBLE_CLICK", 2: "KEYBOARD_EVENT"}
 
+# ── Device ───────────────────────────────────────────────────────────────────
+DEVICE = torch.device("cpu" if torch.cuda.is_available() else "cpu")
+
 
 # ── Text encoder (shared, loaded once) ───────────────────────────────────────
 class TextEncoder:
@@ -42,20 +45,21 @@ class TextEncoder:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._model = SentenceTransformer(SBERT_MODEL)
+            cls._instance._model = SentenceTransformer(SBERT_MODEL, device=str(DEVICE))
             cls._instance._model.eval()
         return cls._instance
 
     @torch.no_grad()
     def encode(self, texts: List[str]) -> Tensor:
-        """Returns (N, SBERT_DIM) float32 tensor."""
+        """Returns (N, SBERT_DIM) float32 tensor on DEVICE."""
         embs = self._model.encode(
             texts,
             convert_to_tensor=True,
             show_progress_bar=False,
             normalize_embeddings=True,
         )
-        return embs.cpu()                   # keep on CPU; GAT is also CPU
+        # .clone() breaks out of inference_mode so tensors can be used in autograd
+        return embs.to(DEVICE).clone()
 
 
 # ── Graph builder ─────────────────────────────────────────────────────────────
@@ -77,9 +81,10 @@ def dom_to_graph(dom_elements: List[Dict]) -> Data:
     coords = torch.tensor(
         [[el.get("x", 0.0), el.get("y", 0.0)] for el in dom_elements],
         dtype=torch.float,
+        device=DEVICE,
     )  # (N, 2)
 
-    text_embs = encoder.encode(texts)       # (N, SBERT_DIM)
+    text_embs = encoder.encode(texts)       # (N, SBERT_DIM) on DEVICE
     node_feats = torch.cat([text_embs, coords], dim=1)  # (N, SBERT_DIM+2)
 
     # ── Edges ──────────────────────────────────────────────────────────────
@@ -91,25 +96,26 @@ def dom_to_graph(dom_elements: List[Dict]) -> Data:
         dst += [i + 1, i]
 
     # Spatial proximity edges
+    coords_cpu = coords.cpu()               # proximity loop on CPU is fine
     for i in range(n):
         for j in range(i + 1, n):
-            xi, yi = coords[i]
-            xj, yj = coords[j]
+            xi, yi = coords_cpu[i]
+            xj, yj = coords_cpu[j]
             dist = math.sqrt((xi - xj) ** 2 + (yi - yj) ** 2)
             if dist < PROX_THRESH:
                 src += [i, j]
                 dst += [j, i]
 
     if src:
-        edge_index = torch.tensor([src, dst], dtype=torch.long)
+        edge_index = torch.tensor([src, dst], dtype=torch.long, device=DEVICE)
     else:
         # Isolated node: self-loops to avoid empty edge_index
-        edge_index = torch.zeros((2, n), dtype=torch.long)
-        edge_index[1] = torch.arange(n)
+        edge_index = torch.zeros((2, n), dtype=torch.long, device=DEVICE)
+        edge_index[1] = torch.arange(n, device=DEVICE)
 
     # Store raw info for coordinate lookup later
     data = Data(x=node_feats, edge_index=edge_index)
-    data.coords  = coords                   # (N, 2)  raw coordinates
+    data.coords  = coords                   # (N, 2) on DEVICE
     data.n_nodes = n
     return data
 

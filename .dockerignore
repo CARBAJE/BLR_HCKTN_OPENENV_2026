@@ -1,0 +1,9 @@
+OSaaS/node_modules/
+dom_agent/venv/
+dom_agent/__pycache__/
+dom_agent/*.pt
+.git/
+.claude/
+*.pyc
+__pycache__/
+.vite/
