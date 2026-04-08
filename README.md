@@ -1,4 +1,5 @@
 ---
+<<<<<<< HEAD
 title: OpenEnv React OS
 emoji: 🖥️
 colorFrom: indigo
@@ -148,3 +149,14 @@ Designed to run within:
 - **8 GB RAM**
 
 Uses **CPU-only PyTorch** — no GPU required.
+=======
+title: BLR HCKTN OPENENV 2026
+emoji: 🐠
+colorFrom: pink
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+>>>>>>> 963976efa39b1688962aec7569e0935529ae301c
