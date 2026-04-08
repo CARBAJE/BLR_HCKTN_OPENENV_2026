@@ -109,3 +109,15 @@ def score(body: Dict[str, Any]) -> dict:
     rewards = body.get("rewards", [])
     s = _env.get_score(rewards)
     return {"score": s}
+
+
+# ── Entrypoint ─────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    """Server entrypoint — callable by [project.scripts] and openenv validate."""
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()
