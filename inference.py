@@ -12,7 +12,6 @@ Environment variables:
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
@@ -23,8 +22,9 @@ import requests
 from openai import OpenAI
 
 # ────────────────────────────────────────────────────────────────────────────
-# Configuration from environment
+# Configuration
 # ────────────────────────────────────────────────────────────────────────────
+SERVER_URL   = "http://localhost:8000"
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME", "gpt-4o-mini")
 HF_TOKEN     = os.getenv("HF_TOKEN")
@@ -37,23 +37,23 @@ client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 BENCHMARK = "ReactOS"
 
 # ────────────────────────────────────────────────────────────────────────────
-# Task registry — maps CLI task names to RL instructions
+# Task registry
 # ────────────────────────────────────────────────────────────────────────────
 TASK_INSTRUCTIONS = {
-        "click_start":      "Click the Start button", #Programmatic Gradder: 0.1 // EASY
-        "open_terminal":    "Open the Terminal", # Programmatic Grader: 0.4 // MEDIUM
-        "open_explorer":    "Open the Explorer", # Programmatic Grader: 0.4 // MEDIUM
-        "open_settings":    "Open System Settings", # Programmatic Grader: 0.1 // EASY
-        "open_downloads":   "Open the Downloads folder", # Programmatic Grader: 0.2 // EASY
-        "open_recycle_bin": "Open the Recycle Bin", # Programmatic Grader: 0.2 // EASY
-        "install_python":   "Click the 'Install Now' button in the Python Setup.", #Programmatic Grader: 0.9 // HARD
-        "open_notepad":     "Open Notepad", # PRogrammatic Grader: 0.5 // MEDIUM
-        "open_documents":   "Open the Documents folder", # Programmatic Grader: 0.7 // MEDIUM
-        "open_file_terminal": "Open readme.txt using the Terminal", # Programmatic Grader: 1 // Hard
+    "click_start":        "Click the Start button",
+    "open_terminal":      "Open the Terminal",
+    "open_explorer":      "Open the Explorer",
+    "open_settings":      "Open System Settings",
+    "open_downloads":     "Open the Downloads folder",
+    "open_recycle_bin":   "Open the Recycle Bin",
+    "install_python":     "Click the 'Install Now' button in the Python Setup.",
+    "open_notepad":       "Open Notepad",
+    "open_documents":     "Open the Documents folder",
+    "open_file_terminal": "Open readme.txt using the Terminal",
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Logging (all diagnostics -> stderr, NEVER stdout)
+# Logging — diagnostics go to stderr ONLY, never stdout
 # ────────────────────────────────────────────────────────────────────────────
 def _log(msg: str) -> None:
     print(f"[INFO] {msg}", file=sys.stderr, flush=True)
@@ -94,10 +94,6 @@ class EnvClient:
 
     def state(self) -> Dict:
         return self._get("/state")
-
-    def score(self, rewards: List[float]) -> float:
-        r = self._post("/score", {"rewards": rewards})
-        return float(r.get("score", 0.0))
 
     def close(self) -> None:
         pass  # HTTP client — nothing to close
@@ -185,7 +181,7 @@ def _ask_llm(instruction: str, dom: List[Dict], step_n: int,
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Stdout formatters (strict hackathon format)
+# Stdout formatters — strict hackathon format, nothing else on stdout
 # ────────────────────────────────────────────────────────────────────────────
 def _emit_start(task: str, model: str) -> None:
     print(f"[START] task={task} env={BENCHMARK} model={model}", flush=True)
@@ -201,34 +197,31 @@ def _emit_step(step: int, action: str, reward: float, done: bool,
     )
 
 
-def _emit_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+def _emit_end(success: bool, steps: int, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={'true' if success else 'false'} steps={steps} "
-        f"score={score:.2f} rewards={rewards_str}",
+        f"[END] success={'true' if success else 'false'} steps={steps} rewards={rewards_str}",
         flush=True,
     )
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Main loop
+# Episode loop
 # ────────────────────────────────────────────────────────────────────────────
-def run(server_url: str, task_name: str, instruction: str | None = None,
-        max_steps: int = 30) -> None:
+def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) -> None:
     env = EnvClient(server_url)
 
-    # Reset
     try:
         reset_resp = env.reset(task_name=task_name, instruction=instruction)
     except Exception as e:
-        _err(f"/reset failed: {e}")
-        sys.exit(1)
+        _err(f"/reset failed for task={task_name}: {e}")
+        return
 
-    obs = reset_resp.get("observation", {})
-    ep_instruction = obs.get("instruction", instruction or task_name)
-    dom = [el if isinstance(el, dict) else el for el in obs.get("dom", [])]
-    task_info = obs.get("info", {})
-    actual_task = task_info.get("task", task_name)
+    obs            = reset_resp.get("observation", {})
+    ep_instruction = obs.get("instruction", instruction)
+    dom            = obs.get("dom", [])
+    task_info      = obs.get("info", {})
+    actual_task    = task_info.get("task", task_name)
 
     _log(f"Task: {actual_task} | Instruction: \"{ep_instruction}\"")
     _log(f"Initial DOM: {len(dom)} elements")
@@ -236,9 +229,8 @@ def run(server_url: str, task_name: str, instruction: str | None = None,
     _emit_start(task=actual_task, model=MODEL_NAME)
 
     all_rewards: List[float] = []
-    success = False
-    score = 0.0
-    history: List[str] = []
+    success                  = False
+    history: List[str]       = []
     conversation: List[Dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     try:
@@ -251,7 +243,6 @@ def run(server_url: str, task_name: str, instruction: str | None = None,
                 all_rewards.append(0.0)
                 break
 
-            # Ask LLM
             llm_action = _ask_llm(ep_instruction, dom, step_n, history, conversation)
             node_idx   = llm_action["node_idx"]
             action_str = llm_action["action"]
@@ -262,13 +253,12 @@ def run(server_url: str, task_name: str, instruction: str | None = None,
 
             history.append(f"Step {step_n}: {action_str} [{node_idx}] \"{el_text}\"")
 
-            # Step environment
             try:
                 result = env.step({
-                    "action": action_str,
+                    "action":   action_str,
                     "node_idx": node_idx,
-                    "x": x,
-                    "y": y,
+                    "x":        x,
+                    "y":        y,
                 })
             except Exception as e:
                 error_msg = str(e)
@@ -280,9 +270,7 @@ def run(server_url: str, task_name: str, instruction: str | None = None,
             done   = bool(result.get("done", False))
             all_rewards.append(reward)
 
-            action_display = f"{action_str}({el_text})"
-            _emit_step(step_n, action_display, reward, done, error=None)
-
+            _emit_step(step_n, f"{action_str}({el_text})", reward, done, error=None)
             _log(f"  reward={reward:.3f} done={done} info={result.get('info', {})}")
 
             if done:
@@ -290,58 +278,22 @@ def run(server_url: str, task_name: str, instruction: str | None = None,
                     success = True
                 break
 
-            # Refresh DOM from observation
             step_obs = result.get("observation", {})
-            dom = step_obs.get("dom", [])
-            if not dom:
-                # Fallback: fetch state
-                try:
-                    dom = []  # will break on next iteration
-                except Exception:
-                    pass
-
-        # Compute score via server grader
-        try:
-            score = env.score(all_rewards)
-        except Exception:
-            score = 1.0 if success else (sum(all_rewards) / max(len(all_rewards), 1))
-
-        score = min(max(score, 0.0), 1.0)
-        if score >= 0.5:
-            success = True
+            dom = step_obs.get("dom", dom)
 
     finally:
-        try:
-            env.close()
-        except Exception:
-            pass
-        _emit_end(success=success, steps=len(all_rewards), score=score, rewards=all_rewards)
+        env.close()
+        _emit_end(success=success, steps=len(all_rewards), rewards=all_rewards)
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# CLI
+# Entry point — runs every task automatically
 # ────────────────────────────────────────────────────────────────────────────
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="OpenEnv LLM Agent for ReactOS")
-    p.add_argument("--server", default="http://localhost:8000",
-                   help="ReactOS environment server URL")
-    p.add_argument("--task", default="open_terminal",
-                   choices=list(TASK_INSTRUCTIONS.keys()),
-                   help="Task to run")
-    p.add_argument("--instruction", default=None,
-                   help="Custom instruction (overrides task)")
-    p.add_argument("--max_steps", type=int, default=30,
-                   help="Maximum steps per episode")
-    return p.parse_args()
-
-
 if __name__ == "__main__":
-    args = parse_args()
-    # --instruction overrides --task; otherwise look up the task in the registry
-    instruction = args.instruction or TASK_INSTRUCTIONS.get(args.task, args.task)
-    run(
-        server_url=args.server,
-        task_name=args.task,
-        instruction=instruction,
-        max_steps=args.max_steps,
-    )
+    for task_name, instruction in TASK_INSTRUCTIONS.items():
+        _log(f"Starting task: {task_name}")
+        run(
+            server_url=SERVER_URL,
+            task_name=task_name,
+            instruction=instruction,
+        )
