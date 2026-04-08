@@ -77,17 +77,19 @@ class EnvClient:
         r.raise_for_status()
         return r.json()
 
-    def reset(self, instruction: str | None = None) -> None:
+    def reset(self, instruction: str | None = None) -> Dict:
+        """POST /reset → returns the initial ReactOSObservation dict."""
         body: Dict[str, Any] = {}
         if instruction:
             body["instruction"] = instruction
-        self._post("/reset", body)
+        return self._post("/reset", body)
 
     def step(self, payload: Dict) -> Dict:
         return self._post("/step", payload)
 
-    def state(self) -> Dict:
-        return self._get("/state")
+    def score(self, rewards: List[float]) -> float:
+        r = self._post("/score", {"rewards": rewards})
+        return float(r.get("score", 0.0))
 
     def close(self) -> None:
         pass  # HTTP client — nothing to close
@@ -190,10 +192,11 @@ def _emit_step(step: int, action: str, reward: float, done: bool,
     )
 
 
-def _emit_end(success: bool, steps: int, rewards: List[float]) -> None:
+def _emit_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={'true' if success else 'false'} steps={steps} rewards={rewards_str}",
+        f"[END] success={'true' if success else 'false'} steps={steps} "
+        f"score={score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -205,10 +208,9 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
     env = EnvClient(server_url)
 
     try:
-        env.reset(instruction=instruction)
-        state      = env.state()
-        dom            = state.get("dom", [])
-        ep_instruction = state.get("instruction", instruction)
+        obs            = env.reset(instruction=instruction)
+        dom            = obs.get("dom", [])
+        ep_instruction = obs.get("instruction", instruction)
     except Exception as e:
         _err(f"/reset failed for task={task_name}: {e}")
         return
@@ -217,6 +219,7 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
 
     all_rewards: List[float] = []
     success                  = False
+    score                    = 0.0
     history: List[str]       = []
     conversation: List[Dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -264,15 +267,18 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
                     success = True
                 break
 
-            try:
-                state = env.state()
-                dom = state.get("dom", dom)
-            except Exception:
-                pass  # keep previous dom on state fetch failure
+            # Refresh DOM from the step's observation (no extra /state call needed)
+            step_obs = result.get("observation", {})
+            dom = step_obs.get("dom", dom)
 
     finally:
+        try:
+            score = env.score(all_rewards)
+            score = min(max(score, 0.0), 1.0)
+        except Exception:
+            score = 1.0 if success else (max(all_rewards) if all_rewards else 0.0)
         env.close()
-        _emit_end(success=success, steps=len(all_rewards), rewards=all_rewards)
+        _emit_end(success=success, steps=len(all_rewards), score=score, rewards=all_rewards)
 
 
 # ────────────────────────────────────────────────────────────────────────────

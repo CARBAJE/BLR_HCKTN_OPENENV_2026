@@ -1,18 +1,20 @@
 """
 app.py — FastAPI application for the ReactOS environment.
 
-Exposes the OpenEnv-compatible endpoints: /reset, /step, /state,
-/health, /schema, /tasks. Complies with OpenEnv spec v1.0:
-  - reset()  → ReactOSObservation (initial observation)
-  - step()   → {observation, reward, done, info}
-  - state()  → ReactOSState
+OpenEnv spec v1 compliant endpoints:
+  POST /reset  → ReactOSObservation   (initial observation)
+  POST /step   → {observation, reward, done, info}
+  GET  /state  → ReactOSState
+  GET  /health → {"status": "healthy"}
+  GET  /schema → JSON schemas for Action / Observation / Reward / State
+  GET  /tasks  → task catalog
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.environment import ReactOSEnvironment
@@ -27,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Single environment instance (one episode at a time)
 _env = ReactOSEnvironment()
 
 
@@ -41,13 +42,13 @@ def health() -> dict:
 # ── Core OpenEnv endpoints ─────────────────────────────────────────────────────
 
 @app.post("/reset", response_model=ReactOSObservation)
-def reset(body: Optional[Dict[str, Any]] = None) -> ReactOSObservation:
+def reset(body: Optional[Dict[str, Any]] = Body(default=None)) -> ReactOSObservation:
     """Reset the environment and return the initial observation.
 
-    Accepts optional body fields:
+    Optional body:
       - instruction (str): natural-language task instruction
-      - task_name (str): known task ID from the task catalog
-      - seed (int): RNG seed for reproducibility
+      - task_name   (str): known task ID
+      - seed        (int): RNG seed
     """
     body = body or {}
     obs = _env.reset(
@@ -59,38 +60,31 @@ def reset(body: Optional[Dict[str, Any]] = None) -> ReactOSObservation:
 
 
 @app.post("/step")
-def step(body: Dict[str, Any]) -> dict:
+def step(action: ReactOSAction) -> dict:
     """Execute one action and return (observation, reward, done, info).
 
-    Body fields:
-      - action (str): CLICK or DOUBLE_CLICK
+    Body: ReactOSAction JSON
+      - action   (str): CLICK | DOUBLE_CLICK
       - node_idx (int): 0-based index in current DOM
-      - x (float): normalized x coordinate (informational)
-      - y (float): normalized y coordinate (informational)
+      - x        (float): normalized x coordinate
+      - y        (float): normalized y coordinate
     """
-    action = ReactOSAction(
-        action=body.get("action", "CLICK"),
-        node_idx=body.get("node_idx", 0),
-        x=body.get("x", 0.0),
-        y=body.get("y", 0.0),
-    )
     obs = _env.step(action)
-    reward_val = obs.reward or 0.0
     return {
         "observation": obs.model_dump(),
-        "reward": reward_val,
-        "done": obs.done,
-        "info": obs.info,
+        "reward":      obs.reward or 0.0,
+        "done":        obs.done,
+        "info":        obs.info,
     }
 
 
 @app.get("/state", response_model=ReactOSState)
 def get_state() -> ReactOSState:
-    """Return the current episode state."""
+    """Return the current episode metadata state."""
     return _env.state
 
 
-# ── Introspection endpoints ────────────────────────────────────────────────────
+# ── Introspection ──────────────────────────────────────────────────────────────
 
 @app.get("/schema")
 def schema() -> dict:

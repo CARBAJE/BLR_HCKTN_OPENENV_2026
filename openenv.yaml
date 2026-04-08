@@ -1,13 +1,13 @@
-spec_version: "1.0"
+spec_version: 1
 name: react_os
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
 description: >
   A simulated React OS environment for training GUI navigation agents
   via Reinforcement Learning. Agents observe a structured DOM, issue
   mouse/keyboard actions, and receive shaped reward signals.
-type: environment
-runtime: docker
-entrypoint: server.app:app
-port: 8000
 reward_range: [0.0, 1.0]
 max_steps: 30
 tasks:
@@ -21,39 +21,3 @@ tasks:
   - open_notepad
   - open_documents
   - open_file_terminal
-observation:
-  type: object
-  properties:
-    dom:
-      type: array
-      description: List of interactive DOM elements with normalized (x, y) coordinates
-    instruction:
-      type: string
-      description: Natural-language task description
-    done:
-      type: boolean
-    reward:
-      type: number
-      minimum: 0.0
-      maximum: 1.0
-    info:
-      type: object
-action:
-  type: object
-  properties:
-    action:
-      type: string
-      enum: [CLICK, DOUBLE_CLICK]
-    node_idx:
-      type: integer
-      description: 0-based index of the target DOM element
-    x:
-      type: number
-      description: Normalized horizontal coordinate (0–1)
-    y:
-      type: number
-      description: Normalized vertical coordinate (0–1)
-reward:
-  type: number
-  minimum: 0.0
-  maximum: 1.0
