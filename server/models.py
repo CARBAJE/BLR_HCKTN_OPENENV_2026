@@ -1,7 +1,8 @@
 """
 models.py — Pydantic models for the ReactOS environment.
 
-Defines Action, Observation used by the FastAPI endpoints.
+Defines Action, Observation, Reward, and State models used by the FastAPI
+endpoints and validated by openenv validate.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from pydantic import BaseModel, Field
 class ReactOSAction(BaseModel):
     action: str = Field(default="CLICK", description="CLICK or DOUBLE_CLICK")
     node_idx: int = Field(default=0, description="0-based index of DOM element to interact with")
+    x: float = Field(default=0.0, description="Normalized horizontal coordinate (0–1)")
+    y: float = Field(default=0.0, description="Normalized vertical coordinate (0–1)")
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -35,6 +38,14 @@ class ReactOSObservation(BaseModel):
     reward: Optional[float] = Field(default=None)
     info: Dict[str, Any] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+# ── Reward ────────────────────────────────────────────────────────────────────
+
+class Reward(BaseModel):
+    """Typed reward model required by the OpenEnv specification."""
+    value: float = Field(default=0.0, ge=0.0, le=1.0, description="Scalar reward in [0, 1]")
+    info: Dict[str, Any] = Field(default_factory=dict, description="Reward component breakdown")
 
 
 # ── State ─────────────────────────────────────────────────────────────────────

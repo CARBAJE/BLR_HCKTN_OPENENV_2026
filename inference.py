@@ -16,7 +16,7 @@ import json
 import os
 import re
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import requests
 from openai import OpenAI
@@ -77,13 +77,11 @@ class EnvClient:
         r.raise_for_status()
         return r.json()
 
-    def reset(self, task_name: str | None = None, instruction: str | None = None) -> Dict:
+    def reset(self, instruction: str | None = None) -> None:
         body: Dict[str, Any] = {}
-        if task_name:
-            body["task_name"] = task_name
         if instruction:
             body["instruction"] = instruction
-        return self._post("/reset", body)
+        self._post("/reset", body)
 
     def step(self, payload: Dict) -> Dict:
         return self._post("/step", payload)
@@ -207,14 +205,13 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
     env = EnvClient(server_url)
 
     try:
-        reset_resp = env.reset(task_name=task_name, instruction=instruction)
+        env.reset(instruction=instruction)
+        state      = env.state()
+        dom            = state.get("dom", [])
+        ep_instruction = state.get("instruction", instruction)
     except Exception as e:
         _err(f"/reset failed for task={task_name}: {e}")
         return
-
-    obs            = reset_resp.get("observation", {})
-    ep_instruction = obs.get("instruction", instruction)
-    dom            = obs.get("dom", [])
 
     _emit_start(task=task_name, model=MODEL_NAME)
 
@@ -267,8 +264,11 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
                     success = True
                 break
 
-            step_obs = result.get("observation", {})
-            dom = step_obs.get("dom", dom)
+            try:
+                state = env.state()
+                dom = state.get("dom", dom)
+            except Exception:
+                pass  # keep previous dom on state fetch failure
 
     finally:
         env.close()
