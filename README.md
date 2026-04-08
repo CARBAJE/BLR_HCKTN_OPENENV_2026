@@ -118,14 +118,20 @@ Episodes terminate when `done: true` or after 30 steps.
 
 ### Available tasks
 
-| Instruction | Target element |
-|---|---|
-| Click the Start button | Start |
-| Open the Terminal | Terminal |
-| Open the Explorer | This PC |
-| Open System Settings | System Settings |
-| Open the Downloads folder | Downloads |
-| Open the Recycle Bin | Recycle Bin |
+| Task ID | Instruction | Difficulty | Grader Score |
+|---|---|:---:|:---:|
+| `click_start` | Click the Start button | 🟢 Easy | 0.1 |
+| `open_settings` | Open System Settings | 🟢 Easy | 0.1 |
+| `open_downloads` | Open the Downloads folder | 🟢 Easy | 0.2 |
+| `open_recycle_bin` | Open the Recycle Bin | 🟢 Easy | 0.2 |
+| `open_terminal` | Open the Terminal | 🟡 Medium | 0.4 |
+| `open_explorer` | Open the Explorer | 🟡 Medium | 0.4 |
+| `open_notepad` | Open Notepad | 🟡 Medium | 0.5 |
+| `open_documents` | Open the Documents folder | 🟡 Medium | 0.7 |
+| `install_python` | Click the 'Install Now' button in the Python Setup | 🔴 Hard | 0.9 |
+| `open_file_terminal` | Open readme.txt using the Terminal | 🔴 Hard | 1.0 |
+
+> **Grader Score** = programmatic difficulty weight used during training. Higher scores indicate tasks that require more steps, multi-window navigation, or specific action sequences.
 
 ---
 

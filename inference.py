@@ -40,16 +40,16 @@ BENCHMARK = "ReactOS"
 # Task registry — maps CLI task names to RL instructions
 # ────────────────────────────────────────────────────────────────────────────
 TASK_INSTRUCTIONS = {
-    "click_start":      "Click the Start button",
-    "open_terminal":    "Open the Terminal",
-    "open_explorer":    "Open the Explorer",
-    "open_settings":    "Open System Settings",
-    "open_downloads":   "Open the Downloads folder",
-    "open_recycle_bin": "Open the Recycle Bin",
-    "install_python":   "Click the 'Install Now' button in the Python Setup.",
-    "open_notepad":     "Open Notepad",
-    "open_documents":   "Open the Documents folder",
-    "open_file_terminal": "Open readme.txt using the Terminal",
+        "click_start":      "Click the Start button", #Programmatic Gradder: 0.1 // EASY
+        "open_terminal":    "Open the Terminal", # Programmatic Grader: 0.4 // MEDIUM
+        "open_explorer":    "Open the Explorer", # Programmatic Grader: 0.4 // MEDIUM
+        "open_settings":    "Open System Settings", # Programmatic Grader: 0.1 // EASY
+        "open_downloads":   "Open the Downloads folder", # Programmatic Grader: 0.2 // EASY
+        "open_recycle_bin": "Open the Recycle Bin", # Programmatic Grader: 0.2 // EASY
+        "install_python":   "Click the 'Install Now' button in the Python Setup.", #Programmatic Grader: 0.9 // HARD
+        "open_notepad":     "Open Notepad", # PRogrammatic Grader: 0.5 // MEDIUM
+        "open_documents":   "Open the Documents folder", # Programmatic Grader: 0.7 // MEDIUM
+        "open_file_terminal": "Open readme.txt using the Terminal", # Programmatic Grader: 1 // Hard
 }
 
 # ────────────────────────────────────────────────────────────────────────────
