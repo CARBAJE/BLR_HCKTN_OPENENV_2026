@@ -36,8 +36,10 @@ WORKDIR /app
 # --------------------------------------------------------------------------
 COPY requirements.txt .
 RUN pip install --no-cache-dir \
-      torch==2.2.2+cpu \
-      torchvision==0.17.2+cpu \
+      "numpy<2" \
+      torch==2.4.0+cpu \
+      torchvision==0.19.0+cpu \
+      torchaudio==2.4.0+cpu \
       --extra-index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt
 
@@ -72,14 +74,8 @@ ENV VITE_BASE_URL=http://localhost:5173 \
     SENTENCE_TRANSFORMERS_HOME=/app/.cache/st \
     TORCH_HOME=/app/.cache/torch
 
-# --------------------------------------------------------------------------
-# Pre-download sentence-transformers model (baked into image)
-# --------------------------------------------------------------------------
-RUN python - <<'EOF'
-from sentence_transformers import SentenceTransformer
-SentenceTransformer("all-MiniLM-L6-v2")
-print("sentence-transformers model cached.")
-EOF
+# NOTE: sentence-transformers model (all-MiniLM-L6-v2) will be downloaded
+# on first use. Set HF_HUB_OFFLINE=1 to disable downloads at runtime.
 
 # --------------------------------------------------------------------------
 # Launch
