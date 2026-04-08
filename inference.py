@@ -273,10 +273,10 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
 
     finally:
         try:
-            score = env.score(all_rewards)
-            score = min(max(score, 0.0), 1.0)
+            score = env.score(all_rewards)  # already squashed by server
         except Exception:
-            score = 1.0 if success else (max(all_rewards) if all_rewards else 0.0)
+            raw = 1.0 if success else (max(all_rewards) if all_rewards else 0.0)
+            score = 0.01 + raw * 0.98  # fallback squash: [0,1] → (0.01, 0.99)
         env.close()
         _emit_end(success=success, steps=len(all_rewards), score=score, rewards=all_rewards)
 

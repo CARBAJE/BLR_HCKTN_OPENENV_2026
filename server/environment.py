@@ -15,6 +15,14 @@ from server.models import DOMElement, ReactOSAction, ReactOSObservation, ReactOS
 from server.tasks import TASKS, DEFAULT_TASK, Task
 
 
+_EPS = 0.01  # open-interval margin — reward/score ∈ (0, 1), never 0.0 or 1.0
+
+
+def _squash(v: float) -> float:
+    """Linearly remap [0, 1] → (_EPS, 1 − _EPS), excluding both extremes."""
+    return _EPS + float(v) * (1.0 - 2.0 * _EPS)
+
+
 def _target_visible(dom: List[dict], target: str) -> bool:
     tgt = target.lower()
     return any(
@@ -165,12 +173,12 @@ class ReactOSEnvironment:
         )
         exploration_bonus = min(new_icon_count * 0.04, 0.12)
 
-        reward = min(
+        reward = _squash(min(
             1.0,
             element_score * action_score
             + visibility_bonus + state_change_bonus
             + proximity_reward + exploration_bonus,
-        )
+        ))
 
         done = (
             (element_score * action_score >= 1.0)
@@ -204,10 +212,11 @@ class ReactOSEnvironment:
         return self._state
 
     def get_score(self, rewards: List[float]) -> float:
-        """Compute the graded score for the episode."""
+        """Compute the graded score for the episode, bounded in (0, 1)."""
         if self._task is None:
-            return 0.0
-        return self._task.grader(rewards, self._dom_history, self._os.state)
+            return _squash(0.0)
+        raw = self._task.grader(rewards, self._dom_history, self._os.state)
+        return _squash(raw)
 
     def get_tasks(self) -> Dict[str, dict]:
         """Return available tasks for introspection."""
