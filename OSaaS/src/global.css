@@ -1,0 +1,53 @@
+/* ============================================================
+   OSaaS Global Styles
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: #080810;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: #111; }
+::-webkit-scrollbar-thumb  { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* Prevent text selection on drag */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Desktop icon hover */
+.desktop-icon:hover { background: rgba(255, 255, 255, 0.15) !important; }
+.desktop-icon:focus { background: rgba(0, 120, 212, 0.3) !important; outline: none; }
+
+/* Start menu item hover */
+.start-menu-item:hover { background: rgba(255, 255, 255, 0.1) !important; }
+
+/* Explorer item hover */
+.explorer-item:hover { background: #e8f0fe !important; }
+
+/* Taskbar button hover */
+.taskbar-btn:hover { background: rgba(255, 255, 255, 0.15) !important; }
+
+/* Window control buttons */
+.win-ctrl:hover { background: rgba(255, 255, 255, 0.25) !important; }
+.win-ctrl-close:hover { background: #c42b1c !important; }
+
+/* Control panel tab button */
+.ctrl-tab:hover { background: rgba(255, 255, 255, 0.08) !important; }
+
+/* Quick command button */
+.quick-cmd:hover { background: rgba(255, 255, 255, 0.1) !important; }

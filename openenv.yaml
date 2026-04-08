@@ -1,0 +1,81 @@
+name: react-os-env
+description: >
+  OpenEnv-compatible RL environment wrapping a simulated OS built in React/Vite.
+  Agents interact with a desktop-like UI via click, keyboard, and navigation actions.
+version: "1.0.0"
+
+action_space:
+  type: discrete
+  actions:
+    - type: CLICK
+      description: Click at normalized (x, y) coordinates on the screen.
+      payload:
+        x:
+          type: float
+          range: [0.0, 1.0]
+        y:
+          type: float
+          range: [0.0, 1.0]
+    - type: TYPE
+      description: Type a string of text into the currently focused element.
+      payload:
+        text:
+          type: string
+    - type: SCROLL
+      description: Scroll the viewport by delta pixels.
+      payload:
+        dx:
+          type: float
+        dy:
+          type: float
+    - type: KEY
+      description: Press a keyboard key or key combination (e.g. "Enter", "ctrl+c").
+      payload:
+        key:
+          type: string
+    - type: NAVIGATE
+      description: Navigate the browser to a given URL.
+      payload:
+        url:
+          type: string
+
+observation_space:
+  type: dict
+  fields:
+    screenshot:
+      type: string
+      description: Base64-encoded PNG screenshot of the current OS state.
+    dom_state:
+      type: object
+      description: Serialised DOM / window tree of currently open applications.
+    cursor_position:
+      type: object
+      description: Current {x, y} cursor coordinates (normalised 0–1).
+    open_windows:
+      type: array
+      description: List of currently open application windows with id and title.
+
+tasks:
+  - id: easy
+    description: >
+      Open the pre-installed text editor, type "Hello World", and save the file.
+    difficulty: easy
+    max_steps: 30
+    reward_signal: sparse
+  - id: medium
+    description: >
+      Open the file manager, navigate to the Documents folder, create a new folder
+      named "hackathon", and move the file "notes.txt" into it.
+    difficulty: medium
+    max_steps: 60
+    reward_signal: sparse
+  - id: hard
+    description: >
+      Open the terminal, clone the repository at the provided URL, install its
+      dependencies, and run the test suite successfully.
+    difficulty: hard
+    max_steps: 100
+    reward_signal: dense
+
+reward_range: [-1.0, 1.0]
+max_steps: 100
