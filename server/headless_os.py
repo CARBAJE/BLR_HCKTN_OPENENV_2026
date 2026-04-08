@@ -156,6 +156,13 @@ class HeadlessOS:
         x, y, w, h = win["x"], win["y"], win["w"], win["h"]
         comp = win.get("component", "")
 
+        if comp == "Terminal":
+            cmds = ["dir", "open readme.txt", "python"]
+            for i, cmd in enumerate(cmds):
+                els.append({"text": f"Terminal cmd: {cmd}", "type": "button",
+                             "x": (x + 20 + i * 160) / HL_SW,
+                             "y": (y + h * 0.85) / HL_SH})
+
         if comp == "Explorer":
             for j, folder in enumerate(["Desktop", "Downloads", "Documents", "AppData"]):
                 els.append({"text": f"File: {folder}", "type": "element",
