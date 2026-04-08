@@ -53,12 +53,8 @@ TASK_INSTRUCTIONS = {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# Logging — diagnostics go to stderr ONLY, never stdout
+# Logging — errors only, strictly to stderr
 # ────────────────────────────────────────────────────────────────────────────
-def _log(msg: str) -> None:
-    print(f"[INFO] {msg}", file=sys.stderr, flush=True)
-
-
 def _err(msg: str) -> None:
     print(f"[ERROR] {msg}", file=sys.stderr, flush=True)
 
@@ -171,7 +167,6 @@ def _ask_llm(instruction: str, dom: List[Dict], step_n: int,
             max_tokens=100,
         )
         raw = response.choices[0].message.content.strip()
-        _log(f"LLM raw: {raw}")
         conversation.append({"role": "assistant", "content": raw})
         return _parse_llm_response(raw, len(dom))
     except Exception as e:
@@ -220,13 +215,8 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
     obs            = reset_resp.get("observation", {})
     ep_instruction = obs.get("instruction", instruction)
     dom            = obs.get("dom", [])
-    task_info      = obs.get("info", {})
-    actual_task    = task_info.get("task", task_name)
 
-    _log(f"Task: {actual_task} | Instruction: \"{ep_instruction}\"")
-    _log(f"Initial DOM: {len(dom)} elements")
-
-    _emit_start(task=actual_task, model=MODEL_NAME)
+    _emit_start(task=task_name, model=MODEL_NAME)
 
     all_rewards: List[float] = []
     success                  = False
@@ -271,7 +261,6 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
             all_rewards.append(reward)
 
             _emit_step(step_n, f"{action_str}({el_text})", reward, done, error=None)
-            _log(f"  reward={reward:.3f} done={done} info={result.get('info', {})}")
 
             if done:
                 if reward >= 1.0:
@@ -291,7 +280,6 @@ def run(server_url: str, task_name: str, instruction: str, max_steps: int = 30) 
 # ────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     for task_name, instruction in TASK_INSTRUCTIONS.items():
-        _log(f"Starting task: {task_name}")
         run(
             server_url=SERVER_URL,
             task_name=task_name,
