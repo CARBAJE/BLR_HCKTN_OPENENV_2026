@@ -1,8 +1,14 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# OpenEnv — React OS Simulator + FastAPI wrapper
-# Runs on Hugging Face Spaces (Docker SDK)
+# OpenEnv — React OS Simulator + FastAPI + DOMAgent
+# Tagged: openenv
+# Target: Hugging Face Spaces (Docker SDK), 2 vCPU / 8 GB RAM
 # ──────────────────────────────────────────────────────────────────────────────
 FROM python:3.11-slim
+
+# HF Spaces metadata
+LABEL org.opencontainers.image.title="OpenEnv React-OS"
+LABEL org.opencontainers.image.description="OpenEnv-compatible RL environment wrapping a React/Vite OS simulator."
+LABEL space.tag="openenv"
 
 # --------------------------------------------------------------------------
 # System dependencies
@@ -12,9 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       gnupg \
       socat \
       ca-certificates \
+      build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 20 via NodeSource
+# Node 20 via NodeSource (for Vite/OSaaS)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -25,16 +32,25 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 WORKDIR /app
 
 # --------------------------------------------------------------------------
-# Python dependencies (cached layer)
+# Python dependencies (CPU-only torch to fit 8 GB RAM constraint)
 # --------------------------------------------------------------------------
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+      torch==2.2.2+cpu \
+      torchvision==0.17.2+cpu \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
 # --------------------------------------------------------------------------
-# Node dependencies (only if package.json exists)
+# Node dependencies (OSaaS frontend)
+# --------------------------------------------------------------------------
+COPY OSaaS/package.json OSaaS/package-lock.json ./OSaaS/
+RUN cd OSaaS && npm ci
+
+# --------------------------------------------------------------------------
+# Copy application code
 # --------------------------------------------------------------------------
 COPY . .
-RUN if [ -f "package.json" ]; then npm ci --omit=dev; fi
 
 # --------------------------------------------------------------------------
 # Permissions & entry point
@@ -46,13 +62,24 @@ RUN chmod +x /app/start.sh
 EXPOSE 7860
 
 # --------------------------------------------------------------------------
-# Environment variables (can be overridden in HF Space settings)
+# Environment variables (override in HF Space secrets/settings)
 # --------------------------------------------------------------------------
 ENV VITE_BASE_URL=http://localhost:5173 \
     API_BASE_URL=http://localhost:5173 \
-    MODEL_NAME=gpt-4o \
     HF_TOKEN="" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    # Prevent sentence-transformers from downloading at runtime
+    SENTENCE_TRANSFORMERS_HOME=/app/.cache/st \
+    TORCH_HOME=/app/.cache/torch
+
+# --------------------------------------------------------------------------
+# Pre-download sentence-transformers model (baked into image)
+# --------------------------------------------------------------------------
+RUN python - <<'EOF'
+from sentence_transformers import SentenceTransformer
+SentenceTransformer("all-MiniLM-L6-v2")
+print("sentence-transformers model cached.")
+EOF
 
 # --------------------------------------------------------------------------
 # Launch
