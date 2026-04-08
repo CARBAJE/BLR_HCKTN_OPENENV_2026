@@ -16,7 +16,7 @@ import json
 import os
 import re
 import sys
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 from openai import OpenAI
